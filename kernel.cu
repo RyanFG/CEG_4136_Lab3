@@ -6,17 +6,27 @@
 #include <device_launch_parameters.h>
 
 // Dimensions des matrices
-#define N 3  // Taille des matrices (N x N)
+#define N 256  // Taille des matrices (N x N)
+#define M 16
 
 // Kernel CUDA pour la multiplication de matrices
 __global__ void matrixMultiply(float* A, float* B, float* C) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
+    __shared__ float cols[M * N]; // 4096 Memory Spaces?
+    __shared__ float rows[M * N]; // 4096 Memory Spaces?
+
+    for (int i = 0; i < N/M; i++) {
+        rows[threadIdx.y * M + (N / M) * threadIdx.x + i] = A[row * N + (N / M) * threadIdx.x + i];
+        cols[threadIdx.x * M + (N / M) * threadIdx.y + i] = B[col + ((N/M)*threadIdx.y + i)*N];
+    }
+    __syncthreads();
+
     if (row < N && col < N) {
         float sum = 0.0f;
         for (int k = 0; k < N; k++) {
-            sum += A[row * N + k] * B[k * N + col];
+            sum += rows[M*threadIdx.y+k]*cols[M*threadIdx.x + k];
         }
         C[row * N + col] = sum;
     }
@@ -47,7 +57,7 @@ int main() {
     cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
 
     // Définir la taille des blocs et des grilles
-    dim3 block(16, 16);
+    dim3 block(M, M);
     dim3 grid((N + block.x - 1) / block.x, (N + block.y - 1) / block.y);
 
     // Lancer le kernel pour la multiplication de matrices
